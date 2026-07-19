@@ -537,12 +537,35 @@
   }
 
   function activeQueue(){
-    return queues.find(function(q){ return q.id === activeQueueId; }) || queues[0];
+    var q = queues.find(function(q){ return q.id === activeQueueId; }) || queues[0];
+    if (q && !Array.isArray(q.students)) q.students = [];
+    return q;
+  }
+
+  // Firebase Realtime Database silently omits empty arrays/objects when writing,
+  // and can turn arrays with gaps into keyed objects on read. This normalizes
+  // whatever comes back into plain, predictable arrays so the rest of the app
+  // never has to special-case it.
+  function toArray(value){
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") return Object.keys(value).map(function(k){ return value[k]; });
+    return [];
+  }
+
+  function normalizeQueues(rawQueues){
+    return toArray(rawQueues).filter(Boolean).map(function(q){
+      return {
+        id: q.id,
+        name: q.name,
+        students: toArray(q.students).filter(Boolean)
+      };
+    });
   }
 
   function applySnapshot(data){
-    if (data && data.queues && data.queues.length){
-      queues = data.queues;
+    var normalized = data ? normalizeQueues(data.queues) : [];
+    if (normalized.length){
+      queues = normalized;
       activeQueueId = data.activeQueueId;
     } else {
       queues = defaultQueues();
