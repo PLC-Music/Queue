@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Class Queue</title>
+<style>
+  :root{
+    --bg:#f4f5f7;
+    --panel:#ffffff;
+    --ink:#1f2430;
+    --muted:#6b7280;
+    --accent:#3b5bfd;
+    --accent-ink:#ffffff;
+    --border:#e2e4e9;
+    --danger:#d64545;
+    --done:#2fa84f;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    min-height:100vh;
+  }
+  .app{
+    max-width:1100px;
+    margin:0 auto;
+    padding:20px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    height:100vh;
+  }
+  .topbar h1{
+    font-size:1.4rem;
+    margin:0;
+  }
+  .layout{
+    flex:1;
+    display:flex;
+    gap:20px;
+    min-height:0;
+  }
+  /* ---------- left column: tabs + queue + join input ---------- */
+  .left-col{
+    flex:0 0 auto;
+    width:680px;
+    min-width:320px;
+    display:flex;
+    flex-direction:column;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .col-divider{
+    flex-shrink:0;
+    width:10px;
+    cursor:col-resize;
+    position:relative;
+  }
+  .col-divider::after{
+    content:"";
+    position:absolute;
+    left:50%;
+    top:0;
+    bottom:0;
+    width:4px;
+    margin-left:-2px;
+    border-radius:3px;
+    background:var(--border);
+  }
+  .col-divider:hover::after,
+  .col-divider.dragging::after{
+    background:var(--accent);
+  }
+  .tab-strip{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    padding:8px 8px 0;
+    overflow-x:auto;
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+  }
+  .tab{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    padding:8px 12px;
+    border-radius:10px 10px 0 0;
+    background:var(--bg);
+    color:var(--muted);
+    font-weight:600;
+    font-size:0.9rem;
+    white-space:nowrap;
+    cursor:pointer;
+    border:1px solid var(--border);
+    border-bottom:none;
+  }
+  .tab.active{
+    background:var(--panel);
+    color:var(--ink);
+    border-color:var(--border);
+    position:relative;
+    top:1px;
+  }
+  .tab-kebab{
+    border:none;
+    background:transparent;
+    color:inherit;
+    font-weight:700;
+    padding:0 4px;
+    border-radius:6px;
+    font-size:0.9rem;
+  }
+  .tab-kebab:hover{background:rgba(0,0,0,0.08);}
+  .add-tab-btn{
+    flex-shrink:0;
+    background:transparent;
+    border:1px dashed var(--border);
+    color:var(--muted);
+    border-radius:10px;
+    padding:8px 12px;
+    font-weight:700;
+  }
+  .queue-panel{
+    flex:1;
+    overflow-y:auto;
+    padding:16px 18px;
+  }
+  ol#queueList{
+    list-style:none;
+    margin:0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .queue-item{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:10px 12px;
+    background:var(--bg);
+    border-radius:10px;
+    border:1px solid var(--border);
+  }
+  .queue-item.drag-over{
+    border-color:var(--accent);
+    background:#eef1ff;
+  }
+  .drag-handle{
+    flex-shrink:0;
+    cursor:grab;
+    color:var(--muted);
+    font-size:1rem;
+    line-height:1;
+    padding:2px 2px;
+    user-select:none;
+  }
+  .queue-pos{
+    width:26px;
+    height:26px;
+    border-radius:50%;
+    background:var(--accent);
+    color:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:0.8rem;
+    font-weight:700;
+    flex-shrink:0;
+  }
+  .completed-item .queue-pos{background:var(--done);}
+  .queue-name{
+    flex:1;
+    font-weight:600;
+    word-break:break-word;
+  }
+  .completed-item .queue-name{
+    text-decoration:line-through;
+    color:var(--muted);
+    font-weight:500;
+  }
+  .queue-actions{
+    display:flex;
+    gap:6px;
+    flex-shrink:0;
+  }
+  .empty-msg{
+    color:var(--muted);
+    font-size:0.9rem;
+    padding:8px 0;
+  }
+  /* join input, chat-style, pinned to bottom of left column */
+  .chat-input{
+    display:flex;
+    gap:10px;
+    padding:12px 16px;
+    border-top:1px solid var(--border);
+    background:var(--panel);
+    flex-shrink:0;
+  }
+  .chat-input input{
+    flex:1;
+    padding:12px 14px;
+    border:1.5px solid var(--border);
+    border-radius:999px;
+    font-size:1rem;
+  }
+  .chat-input input:focus{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+  }
+  .chat-input button{
+    border-radius:999px;
+    padding:10px 20px;
+  }
+  /* ---------- right column: clock + teacher controls ---------- */
+  .right-col{
+    flex:1;
+    min-width:220px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .clock-box{
+    resize:both;
+    overflow:hidden;
+    min-width:140px;
+    min-height:70px;
+    width:100%;
+    height:130px;
+    max-width:100%;
+    max-height:60vh;
+    background:var(--panel);
+    border:2px solid var(--border);
+    border-radius:var(--radius);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 1px 2px rgba(0,0,0,0.04);
+  }
+  .clock-time{
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+    white-space:nowrap;
+    letter-spacing:1px;
+  }
+  .clock-time .ampm{
+    font-size:0.45em;
+    font-weight:700;
+    margin-left:0.2em;
+    vertical-align:middle;
+  }
+  .clock-hint{
+    font-size:0.7rem;
+    color:var(--muted);
+    text-align:center;
+    margin:0;
+  }
+  button{
+    font-family:inherit;
+    cursor:pointer;
+    border:none;
+    border-radius:10px;
+    padding:10px 16px;
+    font-size:0.95rem;
+    font-weight:600;
+  }
+  .btn-primary{background:var(--accent); color:var(--accent-ink);}
+  .btn-secondary{background:var(--panel); color:var(--ink); border:1.5px solid var(--border);}
+  .btn-danger{background:#fdeceb; color:var(--danger);}
+  .btn-done{background:#e8f8ec; color:var(--done);}
+  .btn-small{padding:6px 10px; font-size:0.85rem; border-radius:8px;}
+  button:disabled{opacity:0.35; cursor:not-allowed;}
+  .teacher-panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .teacher-panel.hidden{display:none;}
+  .mode-label{
+    font-size:0.8rem;
+    font-weight:700;
+    color:var(--done);
+    margin:0;
+  }
+  .subtle-link{
+    font-size:0.78rem;
+    color:var(--muted);
+    text-decoration:underline;
+    cursor:pointer;
+    background:none;
+    border:none;
+    padding:0;
+    text-align:left;
+    font-weight:500;
+  }
+  .subtle-link:hover{color:var(--ink);}
+  /* ---------- modal ---------- */
+  .modal-backdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(20,22,30,0.5);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    z-index:60;
+  }
+  .modal-backdrop.hidden{display:none;}
+  .modal{
+    background:var(--panel);
+    border-radius:16px;
+    padding:24px;
+    width:100%;
+    max-width:340px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  .modal h3{margin:0;}
+  .modal input{
+    padding:12px 14px;
+    border:1.5px solid var(--border);
+    border-radius:10px;
+    font-size:1rem;
+    width:100%;
+  }
+  .modal-error{color:var(--danger); font-size:0.85rem; min-height:1em;}
+  .modal-actions{display:flex; gap:8px; justify-content:flex-end; margin-top:4px;}
+  /* ---------- tab context menu ---------- */
+  .tab-menu{
+    position:fixed;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.15);
+    padding:6px;
+    display:flex;
+    flex-direction:column;
+    min-width:150px;
+    z-index:70;
+  }
+  .tab-menu.hidden{display:none;}
+  .tab-menu button{
+    background:none;
+    border:none;
+    text-align:left;
+    padding:8px 10px;
+    border-radius:6px;
+    font-size:0.88rem;
+    font-weight:500;
+    color:var(--ink);
+  }
+  .tab-menu button:hover{background:var(--bg);}
+  .tab-menu button.danger{color:var(--danger);}
+  @media (max-width:760px){
+    .layout{flex-direction:column;}
+    .col-divider{display:none;}
+    .left-col{width:100% !important;}
+    .right-col{width:100%; flex-direction:row; flex-wrap:wrap;}
+    .clock-box{flex:1;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <h1>Class Queue</h1>
+  </div>
+
+  <div class="layout">
+    <section class="left-col">
+      <div class="tab-strip" id="tabStrip"></div>
+      <div class="queue-panel">
+        <ol id="queueList"></ol>
+        <p class="empty-msg" id="queueEmptyMsg">No one in the queue yet.</p>
+      </div>
+      <form class="chat-input" id="joinForm" autocomplete="off">
+        <input type="text" id="nameInput" placeholder="Type your name and press Join" maxlength="40" required />
+        <button type="submit" class="btn-primary">Join</button>
+      </form>
+    </section>
+
+    <div class="col-divider" id="colDivider"></div>
+
+    <aside class="right-col">
+      <div class="clock-box" id="clockBox">
+        <div class="clock-time" id="clockTime">00:00:00</div>
+      </div>
+      <p class="clock-hint">Drag corner to resize</p>
+
+      <button class="btn-secondary" id="teacherBtn">Teacher Mode</button>
+
+      <div class="teacher-panel hidden" id="teacherPanel">
+        <p class="mode-label">Teacher mode active</p>
+        <button class="btn-danger btn-small" id="clearAllBtn">Clear Current Queue</button>
+        <button class="subtle-link" id="changePassLink" type="button">Change teacher password</button>
+      </div>
+    </aside>
+  </div>
+
+</div>
+
+<div class="modal-backdrop hidden" id="modalBackdrop">
+  <div class="modal">
+    <h3 id="modalTitle">Enter Teacher Password</h3>
+    <input type="password" id="modalPass1" placeholder="Password" />
+    <input type="password" id="modalPass2" placeholder="New password" style="display:none" />
+    <div class="modal-error" id="modalError"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary btn-small" id="modalCancel" type="button">Cancel</button>
+      <button class="btn-primary btn-small" id="modalSubmit" type="button">Submit</button>
+    </div>
+  </div>
+</div>
+
+<div class="tab-menu hidden" id="tabMenu">
+  <button data-action="rename">Rename</button>
+  <button data-action="duplicate">Duplicate</button>
+  <button data-action="moveLeft">Move Left</button>
+  <button data-action="moveRight">Move Right</button>
+  <button data-action="delete" class="danger">Delete</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var QUEUES_KEY = "classQueue.queues";
+  var ACTIVE_KEY = "classQueue.activeQueueId";
+  var HASH_KEY = "classQueue.teacherHash";
+  var CLOCK_KEY = "classQueue.clockSize";
+  var LEGACY_STUDENTS_KEY = "classQueue.students";
+
+  function newId(){
+    return Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+  }
+
+  function simpleHash(str){
+    var hash = 0;
+    for (var i = 0; i < str.length; i++){
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return String(hash);
+  }
+
+  // ---------- load state (with one-time migration from the old single-queue format) ----------
+  function loadQueues(){
+    try {
+      var raw = localStorage.getItem(QUEUES_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch(e){}
+
+    // migrate legacy single-list data if present
+    try {
+      var legacy = localStorage.getItem(LEGACY_STUDENTS_KEY);
+      if (legacy){
+        var students = JSON.parse(legacy);
+        localStorage.removeItem(LEGACY_STUDENTS_KEY);
+        return [{ id: newId(), name: "Queue 1", students: students }];
+      }
+    } catch(e){}
+
+    return [{ id: newId(), name: "Queue 1", students: [] }];
+  }
+
+  var queues = loadQueues();
+  var activeQueueId = localStorage.getItem(ACTIVE_KEY) || queues[0].id;
+  if (!queues.find(function(q){ return q.id === activeQueueId; })) activeQueueId = queues[0].id;
+
+  var teacherUnlocked = false;
+
+  function saveQueues(){
+    localStorage.setItem(QUEUES_KEY, JSON.stringify(queues));
+    localStorage.setItem(ACTIVE_KEY, activeQueueId);
+  }
+
+  function activeQueue(){
+    return queues.find(function(q){ return q.id === activeQueueId; }) || queues[0];
+  }
+
+  // ---------- DOM refs ----------
+  var tabStrip = document.getElementById("tabStrip");
+  var queueList = document.getElementById("queueList");
+  var queueEmptyMsg = document.getElementById("queueEmptyMsg");
+  var joinForm = document.getElementById("joinForm");
+  var nameInput = document.getElementById("nameInput");
+  var teacherBtn = document.getElementById("teacherBtn");
+  var teacherPanel = document.getElementById("teacherPanel");
+  var clearAllBtn = document.getElementById("clearAllBtn");
+  var changePassLink = document.getElementById("changePassLink");
+  var tabMenu = document.getElementById("tabMenu");
+
+  var modalBackdrop = document.getElementById("modalBackdrop");
+  var modalTitle = document.getElementById("modalTitle");
+  var modalPass1 = document.getElementById("modalPass1");
+  var modalPass2 = document.getElementById("modalPass2");
+  var modalError = document.getElementById("modalError");
+  var modalCancel = document.getElementById("modalCancel");
+  var modalSubmit = document.getElementById("modalSubmit");
+
+  // ================= RENDER =================
+  function render(){
+    renderTabs();
+    renderQueue();
+    teacherPanel.classList.toggle("hidden", !teacherUnlocked);
+    teacherBtn.textContent = teacherUnlocked ? "Exit Teacher Mode" : "Teacher Mode";
+  }
+
+  function renderTabs(){
+    tabStrip.innerHTML = "";
+    queues.forEach(function(q){
+      var tab = document.createElement("div");
+      tab.className = "tab" + (q.id === activeQueueId ? " active" : "");
+      tab.draggable = teacherUnlocked;
+
+      var label = document.createElement("span");
+      label.textContent = q.name;
+      tab.appendChild(label);
+
+      if (teacherUnlocked){
+        var kebab = document.createElement("button");
+        kebab.type = "button";
+        kebab.className = "tab-kebab";
+        kebab.textContent = "⋮";
+        kebab.addEventListener("click", function(e){
+          e.stopPropagation();
+          openTabMenu(q.id, e.currentTarget);
+        });
+        tab.appendChild(kebab);
+
+        tab.addEventListener("dragstart", function(e){
+          e.dataTransfer.setData("text/plain", q.id);
+        });
+        tab.addEventListener("dragover", function(e){ e.preventDefault(); });
+        tab.addEventListener("drop", function(e){
+          e.preventDefault();
+          var draggedId = e.dataTransfer.getData("text/plain");
+          reorderTab(draggedId, q.id);
+        });
+      }
+
+      tab.addEventListener("click", function(){
+        activeQueueId = q.id;
+        saveQueues();
+        render();
+      });
+
+      tabStrip.appendChild(tab);
+    });
+
+    if (teacherUnlocked){
+      var addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "add-tab-btn";
+      addBtn.textContent = "+";
+      addBtn.title = "Add queue";
+      addBtn.addEventListener("click", addTab);
+      tabStrip.appendChild(addBtn);
+    }
+  }
+
+  function renderQueue(){
+    var students = activeQueue().students;
+    queueList.innerHTML = "";
+    queueEmptyMsg.style.display = students.length ? "none" : "block";
+
+    var pos = 0;
+    students.forEach(function(s){
+      if (!s.done) pos++;
+      queueList.appendChild(buildQueueItem(s, s.done ? null : pos));
+    });
+  }
+
+  function buildQueueItem(student, pos){
+    var li = document.createElement("li");
+    li.className = "queue-item" + (student.done ? " completed-item" : "");
+
+    var canDrag = teacherUnlocked && !student.done;
+    if (canDrag){
+      var handle = document.createElement("span");
+      handle.className = "drag-handle";
+      handle.textContent = "⠿";
+      handle.title = "Drag to reorder";
+      li.appendChild(handle);
+
+      li.draggable = true;
+      li.addEventListener("dragstart", function(e){
+        e.dataTransfer.setData("text/plain", student.id);
+        e.dataTransfer.effectAllowed = "move";
+      });
+      li.addEventListener("dragover", function(e){
+        e.preventDefault();
+        li.classList.add("drag-over");
+      });
+      li.addEventListener("dragleave", function(){
+        li.classList.remove("drag-over");
+      });
+      li.addEventListener("drop", function(e){
+        e.preventDefault();
+        li.classList.remove("drag-over");
+        var draggedId = e.dataTransfer.getData("text/plain");
+        reorderStudents(draggedId, student.id);
+      });
+    }
+
+    var posEl = document.createElement("div");
+    posEl.className = "queue-pos";
+    posEl.textContent = student.done ? "✓" : pos;
+    li.appendChild(posEl);
+
+    var nameEl = document.createElement("div");
+    nameEl.className = "queue-name";
+    nameEl.textContent = student.name;
+    li.appendChild(nameEl);
+
+    if (teacherUnlocked){
+      var actions = document.createElement("div");
+      actions.className = "queue-actions";
+
+      if (!student.done){
+        actions.appendChild(mkBtn("Done", "btn-done", function(){ markDone(student.id); }));
+      } else {
+        actions.appendChild(mkBtn("Undo", "btn-secondary", function(){ undoStudent(student.id); }));
+      }
+      actions.appendChild(mkBtn("Delete", "btn-danger", function(){ deleteStudent(student.id); }));
+
+      li.appendChild(actions);
+    }
+    return li;
+  }
+
+  function mkBtn(label, cls, onClick){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.className = cls + " btn-small";
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  // ================= STUDENT ACTIONS (scoped to active queue) =================
+  function addStudent(name){
+    activeQueue().students.push({ id: newId(), name: name, done: false });
+    saveQueues();
+    render();
+  }
+
+  function markDone(id){
+    var s = activeQueue().students.find(function(x){ return x.id === id; });
+    if (s) s.done = true;
+    saveQueues();
+    render();
+  }
+
+  function undoStudent(id){
+    var s = activeQueue().students.find(function(x){ return x.id === id; });
+    if (s) s.done = false;
+    saveQueues();
+    render();
+  }
+
+  function deleteStudent(id){
+    var q = activeQueue();
+    q.students = q.students.filter(function(x){ return x.id !== id; });
+    saveQueues();
+    render();
+  }
+
+  // Reorders waiting (not-done) students via drag and drop. Completed students
+  // stay pinned at their existing position; only the not-done students among
+  // them are re-shuffled.
+  function reorderStudents(draggedId, dropTargetId){
+    if (!draggedId || draggedId === dropTargetId) return;
+    var students = activeQueue().students;
+
+    var waitingIdx = [];
+    var waitingItems = [];
+    students.forEach(function(s, i){
+      if (!s.done){
+        waitingIdx.push(i);
+        waitingItems.push(s);
+      }
+    });
+
+    var fromPos = waitingItems.findIndex(function(s){ return s.id === draggedId; });
+    var toPos = waitingItems.findIndex(function(s){ return s.id === dropTargetId; });
+    if (fromPos === -1 || toPos === -1 || fromPos === toPos) return;
+
+    var moved = waitingItems.splice(fromPos, 1)[0];
+    waitingItems.splice(toPos, 0, moved);
+    waitingItems.forEach(function(s, i){ students[waitingIdx[i]] = s; });
+
+    saveQueues();
+    render();
+  }
+
+  function clearCurrentQueue(){
+    if (!confirm("Clear everyone from \"" + activeQueue().name + "\"? This cannot be undone.")) return;
+    activeQueue().students = [];
+    saveQueues();
+    render();
+  }
+
+  joinForm.addEventListener("submit", function(e){
+    e.preventDefault();
+    var name = nameInput.value.trim();
+    if (!name) return;
+    addStudent(name);
+    nameInput.value = "";
+    nameInput.focus();
+  });
+
+  clearAllBtn.addEventListener("click", clearCurrentQueue);
+
+  // ================= TAB ACTIONS (teacher only) =================
+  function addTab(){
+    var q = { id: newId(), name: "Queue " + (queues.length + 1), students: [] };
+    queues.push(q);
+    activeQueueId = q.id;
+    saveQueues();
+    render();
+  }
+
+  function renameTab(id){
+    var q = queues.find(function(x){ return x.id === id; });
+    if (!q) return;
+    var name = prompt("Rename queue:", q.name);
+    if (name && name.trim()){
+      q.name = name.trim();
+      saveQueues();
+      render();
+    }
+  }
+
+  function duplicateTab(id){
+    var idx = queues.findIndex(function(x){ return x.id === id; });
+    if (idx === -1) return;
+    var original = queues[idx];
+    var copy = {
+      id: newId(),
+      name: original.name + " (copy)",
+      students: original.students.map(function(s){ return { id: newId(), name: s.name, done: s.done }; })
+    };
+    queues.splice(idx + 1, 0, copy);
+    activeQueueId = copy.id;
+    saveQueues();
+    render();
+  }
+
+  function moveTabByDelta(id, delta){
+    var idx = queues.findIndex(function(x){ return x.id === id; });
+    var target = idx + delta;
+    if (idx === -1 || target < 0 || target >= queues.length) return;
+    var tmp = queues[idx];
+    queues[idx] = queues[target];
+    queues[target] = tmp;
+    saveQueues();
+    render();
+  }
+
+  function reorderTab(draggedId, dropTargetId){
+    if (!draggedId || draggedId === dropTargetId) return;
+    var fromIdx = queues.findIndex(function(x){ return x.id === draggedId; });
+    var toIdx = queues.findIndex(function(x){ return x.id === dropTargetId; });
+    if (fromIdx === -1 || toIdx === -1) return;
+    var moved = queues.splice(fromIdx, 1)[0];
+    queues.splice(toIdx, 0, moved);
+    saveQueues();
+    render();
+  }
+
+  function deleteTab(id){
+    if (queues.length <= 1){
+      alert("At least one queue is required.");
+      return;
+    }
+    var q = queues.find(function(x){ return x.id === id; });
+    if (!confirm("Delete \"" + q.name + "\" and everyone in it? This cannot be undone.")) return;
+    queues = queues.filter(function(x){ return x.id !== id; });
+    if (activeQueueId === id) activeQueueId = queues[0].id;
+    saveQueues();
+    render();
+  }
+
+  // ---------- tab kebab menu ----------
+  var tabMenuTargetId = null;
+
+  function openTabMenu(id, anchorEl){
+    tabMenuTargetId = id;
+    var rect = anchorEl.getBoundingClientRect();
+    tabMenu.style.left = rect.left + "px";
+    tabMenu.style.top = rect.bottom + 4 + "px";
+    tabMenu.classList.remove("hidden");
+  }
+  function closeTabMenu(){
+    tabMenu.classList.add("hidden");
+    tabMenuTargetId = null;
+  }
+  tabMenu.addEventListener("click", function(e){
+    var action = e.target.getAttribute("data-action");
+    if (!action || !tabMenuTargetId) return;
+    var id = tabMenuTargetId;
+    closeTabMenu();
+    if (action === "rename") renameTab(id);
+    else if (action === "duplicate") duplicateTab(id);
+    else if (action === "moveLeft") moveTabByDelta(id, -1);
+    else if (action === "moveRight") moveTabByDelta(id, 1);
+    else if (action === "delete") deleteTab(id);
+  });
+  document.addEventListener("click", function(e){
+    if (!tabMenu.classList.contains("hidden") && !tabMenu.contains(e.target)){
+      closeTabMenu();
+    }
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape") closeTabMenu();
+  });
+
+  // ================= TEACHER MODE / PASSWORD MODAL =================
+  var modalMode = null; // "set" | "verify" | "change"
+
+  function openModal(mode){
+    modalMode = mode;
+    modalError.textContent = "";
+    modalPass1.value = "";
+    modalPass2.value = "";
+
+    if (mode === "set"){
+      modalTitle.textContent = "Set a Teacher Password";
+      modalPass1.placeholder = "Password";
+      modalPass2.style.display = "none";
+    } else if (mode === "verify"){
+      modalTitle.textContent = "Enter Teacher Password";
+      modalPass1.placeholder = "Password";
+      modalPass2.style.display = "none";
+    } else if (mode === "change"){
+      modalTitle.textContent = "Change Teacher Password";
+      modalPass1.placeholder = "Current password";
+      modalPass2.placeholder = "New password";
+      modalPass2.style.display = "block";
+    }
+
+    modalBackdrop.classList.remove("hidden");
+    modalPass1.focus();
+  }
+
+  function closeModal(){
+    modalBackdrop.classList.add("hidden");
+    modalMode = null;
+  }
+
+  teacherBtn.addEventListener("click", function(){
+    if (teacherUnlocked){
+      teacherUnlocked = false;
+      closeTabMenu();
+      render();
+      return;
+    }
+    var storedHash = localStorage.getItem(HASH_KEY);
+    openModal(storedHash ? "verify" : "set");
+  });
+
+  changePassLink.addEventListener("click", function(){
+    openModal("change");
+  });
+
+  modalCancel.addEventListener("click", closeModal);
+  modalBackdrop.addEventListener("click", function(e){
+    if (e.target === modalBackdrop) closeModal();
+  });
+  modalSubmit.addEventListener("click", submitModal);
+  modalPass1.addEventListener("keydown", function(e){ if (e.key === "Enter") submitModal(); });
+  modalPass2.addEventListener("keydown", function(e){ if (e.key === "Enter") submitModal(); });
+
+  function submitModal(){
+    var p1 = modalPass1.value;
+    var p2 = modalPass2.value;
+
+    if (modalMode === "verify"){
+      var storedHash = localStorage.getItem(HASH_KEY);
+      if (simpleHash(p1) === storedHash){
+        teacherUnlocked = true;
+        closeModal();
+        render();
+      } else {
+        modalError.textContent = "Incorrect password.";
+        modalPass1.value = "";
+        modalPass1.focus();
+      }
+      return;
+    }
+
+    if (modalMode === "set"){
+      if (!p1){
+        modalError.textContent = "Password cannot be empty.";
+        return;
+      }
+      localStorage.setItem(HASH_KEY, simpleHash(p1));
+      teacherUnlocked = true;
+      closeModal();
+      render();
+      return;
+    }
+
+    if (modalMode === "change"){
+      var currentHash = localStorage.getItem(HASH_KEY);
+      if (simpleHash(p1) !== currentHash){
+        modalError.textContent = "Current password is incorrect.";
+        modalPass1.value = "";
+        modalPass1.focus();
+        return;
+      }
+      if (!p2){
+        modalError.textContent = "Enter a new password.";
+        return;
+      }
+      localStorage.setItem(HASH_KEY, simpleHash(p2));
+      closeModal();
+      return;
+    }
+  }
+
+  // ================= CLOCK =================
+  var clockTime = document.getElementById("clockTime");
+  var clockBox = document.getElementById("clockBox");
+
+  function pad(n){ return n < 10 ? "0" + n : "" + n; }
+
+  function tickClock(){
+    var now = new Date();
+    var hours24 = now.getHours();
+    var ampm = hours24 >= 12 ? "PM" : "AM";
+    var hours12 = hours24 % 12;
+    if (hours12 === 0) hours12 = 12;
+    clockTime.innerHTML = pad(hours12) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds()) +
+      ' <span class="ampm">' + ampm + '</span>';
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  function scaleClockFont(){
+    var w = clockBox.clientWidth;
+    var h = clockBox.clientHeight;
+    var size = Math.max(14, Math.min(w / 6.4, h * 0.55));
+    clockTime.style.fontSize = size + "px";
+  }
+
+  try {
+    var savedSize = JSON.parse(localStorage.getItem(CLOCK_KEY) || "null");
+    if (savedSize && savedSize.w && savedSize.h){
+      clockBox.style.width = savedSize.w + "px";
+      clockBox.style.height = savedSize.h + "px";
+    }
+  } catch(e){}
+
+  if (window.ResizeObserver){
+    var ro = new ResizeObserver(function(){
+      scaleClockFont();
+      localStorage.setItem(CLOCK_KEY, JSON.stringify({ w: clockBox.clientWidth, h: clockBox.clientHeight }));
+    });
+    ro.observe(clockBox);
+  }
+  scaleClockFont();
+
+  // ================= RESIZABLE COLUMNS =================
+  var LEFT_WIDTH_KEY = "classQueue.leftColWidth";
+  var colDivider = document.getElementById("colDivider");
+  var leftCol = document.querySelector(".left-col");
+  var layoutEl = document.querySelector(".layout");
+
+  (function initColumnWidth(){
+    var saved = parseInt(localStorage.getItem(LEFT_WIDTH_KEY), 10);
+    if (!isNaN(saved)) leftCol.style.width = saved + "px";
+  })();
+
+  var colDragging = false;
+  var colStartX = 0;
+  var colStartWidth = 0;
+
+  function startColDrag(clientX){
+    colDragging = true;
+    colStartX = clientX;
+    colStartWidth = leftCol.getBoundingClientRect().width;
+    colDivider.classList.add("dragging");
+  }
+  function moveColDrag(clientX){
+    if (!colDragging) return;
+    var delta = clientX - colStartX;
+    var containerWidth = layoutEl.getBoundingClientRect().width;
+    var min = 320;
+    var max = containerWidth - 220 - 10;
+    var newWidth = Math.max(min, Math.min(max, colStartWidth + delta));
+    leftCol.style.width = newWidth + "px";
+  }
+  function endColDrag(){
+    if (!colDragging) return;
+    colDragging = false;
+    colDivider.classList.remove("dragging");
+    localStorage.setItem(LEFT_WIDTH_KEY, Math.round(leftCol.getBoundingClientRect().width));
+  }
+
+  colDivider.addEventListener("mousedown", function(e){ startColDrag(e.clientX); e.preventDefault(); });
+  document.addEventListener("mousemove", function(e){ moveColDrag(e.clientX); });
+  document.addEventListener("mouseup", endColDrag);
+
+  colDivider.addEventListener("touchstart", function(e){ startColDrag(e.touches[0].clientX); }, { passive:true });
+  document.addEventListener("touchmove", function(e){ if (colDragging) moveColDrag(e.touches[0].clientX); }, { passive:true });
+  document.addEventListener("touchend", endColDrag);
+
+  // ================= INIT =================
+  saveQueues();
+  render();
+})();
+</script>
+</body>
+</html>
