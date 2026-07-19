@@ -18,12 +18,15 @@
     --radius:14px;
   }
   *{box-sizing:border-box;}
+  html, body{
+    height:100%;
+  }
   body{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     background:var(--bg);
     color:var(--ink);
-    min-height:100vh;
+    overscroll-behavior:none;
   }
   .app{
     max-width:1100px;
@@ -32,7 +35,8 @@
     display:flex;
     flex-direction:column;
     gap:16px;
-    height:100vh;
+    height:100vh;    /* fallback for older browsers */
+    height:100dvh;   /* actual visible viewport on iOS/iPadOS, accounts for toolbars & keyboard */
   }
   .topbar h1{
     font-size:1.4rem;
@@ -68,9 +72,10 @@
   }
   .col-divider{
     flex-shrink:0;
-    width:10px;
+    width:28px;
     cursor:col-resize;
     position:relative;
+    touch-action:none; /* let JS fully own the drag gesture instead of the browser's scroll/zoom handling */
   }
   .col-divider::after{
     content:"";
@@ -86,6 +91,26 @@
   .col-divider:hover::after,
   .col-divider.dragging::after{
     background:var(--accent);
+  }
+  .col-divider::before{
+    content:"⋮";
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    color:var(--muted);
+    font-weight:700;
+    font-size:20px;
+    line-height:1;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 4px;
+    pointer-events:none;
+  }
+  .col-divider.dragging::before{
+    color:var(--accent);
+    border-color:var(--accent);
   }
   .tab-strip{
     display:flex;
@@ -239,14 +264,8 @@
     gap:10px;
   }
   .clock-box{
-    resize:both;
     overflow:hidden;
-    min-width:140px;
-    min-height:70px;
     width:100%;
-    height:130px;
-    max-width:100%;
-    max-height:60vh;
     background:var(--panel);
     border:2px solid var(--border);
     border-radius:var(--radius);
@@ -254,6 +273,7 @@
     align-items:center;
     justify-content:center;
     box-shadow:0 1px 2px rgba(0,0,0,0.04);
+    padding:18px 8px;
   }
   .clock-time{
     font-weight:700;
@@ -266,12 +286,6 @@
     font-weight:700;
     margin-left:0.2em;
     vertical-align:middle;
-  }
-  .clock-hint{
-    font-size:0.7rem;
-    color:var(--muted);
-    text-align:center;
-    margin:0;
   }
   button{
     font-family:inherit;
@@ -398,8 +412,8 @@
         <p class="empty-msg" id="queueEmptyMsg">No one in the queue yet.</p>
       </div>
       <form class="chat-input" id="joinForm" autocomplete="off">
-        <input type="text" id="nameInput" placeholder="Type your name and press Join" maxlength="40" required />
-        <button type="submit" class="btn-primary">Join</button>
+        <input type="text" id="nameInput" placeholder="Connecting…" maxlength="40" required disabled />
+        <button type="submit" class="btn-primary" id="joinBtn" disabled>Join</button>
       </form>
     </section>
 
@@ -409,7 +423,6 @@
       <div class="clock-box" id="clockBox">
         <div class="clock-time" id="clockTime">00:00:00</div>
       </div>
-      <p class="clock-hint">Drag corner to resize</p>
 
       <button class="btn-secondary" id="teacherBtn">Teacher Mode</button>
 
@@ -479,7 +492,6 @@
   }
 
   var HASH_KEY = "classQueue.teacherHash";
-  var CLOCK_KEY = "classQueue.clockSize";
   var LEGACY_QUEUES_KEY = "classQueue.queues"; // from the pre-sync, local-only version
   var LOCAL_STATE_KEY = "classQueue.localState"; // fallback used only if Firebase isn't configured yet
 
@@ -547,6 +559,7 @@
   var queueEmptyMsg = document.getElementById("queueEmptyMsg");
   var joinForm = document.getElementById("joinForm");
   var nameInput = document.getElementById("nameInput");
+  var joinBtn = document.getElementById("joinBtn");
   var teacherBtn = document.getElementById("teacherBtn");
   var teacherPanel = document.getElementById("teacherPanel");
   var clearAllBtn = document.getElementById("clearAllBtn");
@@ -567,6 +580,10 @@
     renderQueue();
     teacherPanel.classList.toggle("hidden", !teacherUnlocked);
     teacherBtn.textContent = teacherUnlocked ? "Exit Teacher Mode" : "Teacher Mode";
+
+    nameInput.disabled = !remoteLoaded;
+    joinBtn.disabled = !remoteLoaded;
+    nameInput.placeholder = remoteLoaded ? "Type your name and press Join" : "Connecting…";
   }
 
   function renderTabs(){
@@ -773,6 +790,7 @@
 
   joinForm.addEventListener("submit", function(e){
     e.preventDefault();
+    if (!remoteLoaded) return;
     var name = nameInput.value.trim();
     if (!name) return;
     addStudent(name);
@@ -1008,27 +1026,19 @@
   tickClock();
   setInterval(tickClock, 1000);
 
+  // Font size always tracks the box's width, so the clock automatically fills
+  // whatever space the right column has — no manual resizing needed.
   function scaleClockFont(){
     var w = clockBox.clientWidth;
-    var h = clockBox.clientHeight;
-    var size = Math.max(14, Math.min(w / 6.4, h * 0.55));
+    var size = Math.max(24, Math.min(w / 6.4, 160));
     clockTime.style.fontSize = size + "px";
   }
 
-  try {
-    var savedSize = JSON.parse(localStorage.getItem(CLOCK_KEY) || "null");
-    if (savedSize && savedSize.w && savedSize.h){
-      clockBox.style.width = savedSize.w + "px";
-      clockBox.style.height = savedSize.h + "px";
-    }
-  } catch(e){}
-
   if (window.ResizeObserver){
-    var ro = new ResizeObserver(function(){
-      scaleClockFont();
-      localStorage.setItem(CLOCK_KEY, JSON.stringify({ w: clockBox.clientWidth, h: clockBox.clientHeight }));
-    });
+    var ro = new ResizeObserver(function(){ scaleClockFont(); });
     ro.observe(clockBox);
+  } else {
+    window.addEventListener("resize", scaleClockFont);
   }
   scaleClockFont();
 
@@ -1058,7 +1068,7 @@
     var delta = clientX - colStartX;
     var containerWidth = layoutEl.getBoundingClientRect().width;
     var min = 320;
-    var max = containerWidth - 220 - 10;
+    var max = containerWidth - 220 - 28;
     var newWidth = Math.max(min, Math.min(max, colStartWidth + delta));
     leftCol.style.width = newWidth + "px";
   }
@@ -1073,9 +1083,21 @@
   document.addEventListener("mousemove", function(e){ moveColDrag(e.clientX); });
   document.addEventListener("mouseup", endColDrag);
 
-  colDivider.addEventListener("touchstart", function(e){ startColDrag(e.touches[0].clientX); }, { passive:true });
-  document.addEventListener("touchmove", function(e){ if (colDragging) moveColDrag(e.touches[0].clientX); }, { passive:true });
+  // touch-action:none (in CSS) already stops the browser from scrolling/zooming
+  // on this element, but these listeners are also non-passive so we can call
+  // preventDefault as a belt-and-suspenders guard against page scroll hijacking
+  // the drag gesture.
+  colDivider.addEventListener("touchstart", function(e){
+    startColDrag(e.touches[0].clientX);
+    e.preventDefault();
+  }, { passive:false });
+  document.addEventListener("touchmove", function(e){
+    if (!colDragging) return;
+    moveColDrag(e.touches[0].clientX);
+    e.preventDefault();
+  }, { passive:false });
   document.addEventListener("touchend", endColDrag);
+  document.addEventListener("touchcancel", endColDrag);
 
   // ================= LIVE SYNC / CONNECTION STATUS =================
   function updateSyncStatus(connected){
