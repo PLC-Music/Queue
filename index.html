@@ -174,16 +174,27 @@
     padding:0;
     display:flex;
     flex-direction:column;
-    gap:8px;
+  }
+  /* Applied by JS only when a single column would need to scroll — spreads
+     the list into as many columns as comfortably fit before scrolling kicks in. */
+  ol#queueList.multi-col{
+    display:block;
+    column-width:280px;
+    column-gap:14px;
   }
   .queue-item{
     display:flex;
     align-items:center;
     gap:12px;
     padding:10px 12px;
+    margin-bottom:8px;
     background:var(--bg);
     border-radius:10px;
     border:1px solid var(--border);
+  }
+  ol#queueList.multi-col .queue-item{
+    break-inside:avoid;
+    -webkit-column-break-inside:avoid;
   }
   .queue-item.drag-over{
     border-color:var(--accent);
@@ -602,6 +613,7 @@
   // ---------- DOM refs ----------
   var syncStatusEl = document.getElementById("syncStatus");
   var tabStrip = document.getElementById("tabStrip");
+  var queuePanel = document.querySelector(".queue-panel");
   var queueList = document.getElementById("queueList");
   var queueEmptyMsg = document.getElementById("queueEmptyMsg");
   var joinForm = document.getElementById("joinForm");
@@ -703,6 +715,18 @@
       if (!s.done) pos++;
       queueList.appendChild(buildQueueItem(s, s.done ? null : pos));
     });
+
+    updateQueueLayout();
+  }
+
+  // Spreads the queue into multiple columns once a single column would need
+  // to scroll to show everything, instead of scrolling right away. Measures
+  // against the plain single-column height first (removing the class) so it
+  // can also switch back to a single column once the list gets short again.
+  function updateQueueLayout(){
+    queueList.classList.remove("multi-col");
+    var overflowing = queueList.scrollHeight > queuePanel.clientHeight + 1;
+    queueList.classList.toggle("multi-col", overflowing);
   }
 
   function buildQueueItem(student, pos){
@@ -1088,6 +1112,18 @@
     window.addEventListener("resize", scaleClockFont);
   }
   scaleClockFont();
+
+  // Re-checks the multi-column layout whenever the queue panel's own size
+  // changes — divider drags, the keyboard opening/closing, or rotating the
+  // iPad. This observes the queue panel only, entirely separate from the
+  // clock's own ResizeObserver above, so the two features can't interfere
+  // with each other even though both can be triggered by the same drag.
+  if (window.ResizeObserver){
+    var queuePanelRO = new ResizeObserver(function(){ updateQueueLayout(); });
+    queuePanelRO.observe(queuePanel);
+  } else {
+    window.addEventListener("resize", updateQueueLayout);
+  }
 
   // ================= RESIZABLE COLUMNS =================
   var LEFT_WIDTH_KEY = "classQueue.leftColWidth";
