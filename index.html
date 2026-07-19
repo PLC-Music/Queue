@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <title>Class Queue</title>
 <style>
   :root{
@@ -35,8 +35,9 @@
     display:flex;
     flex-direction:column;
     gap:16px;
-    height:100vh;    /* fallback for older browsers */
-    height:100dvh;   /* actual visible viewport on iOS/iPadOS, accounts for toolbars & keyboard */
+    height:100vh;                    /* fallback for older browsers */
+    height:100dvh;                   /* accounts for toolbars showing/hiding */
+    height:var(--app-height, 100dvh); /* set live by JS to the actual visible area above the keyboard */
   }
   .topbar h1{
     font-size:1.4rem;
@@ -462,6 +463,29 @@
 <script>
 (function(){
   "use strict";
+
+  // ============================================================
+  // VIEWPORT HEIGHT — keeps the app sized to the visible area above
+  // the on-screen keyboard on iPad/iPhone, instead of the keyboard
+  // just covering the bottom of the page. Falls back to plain dvh/vh
+  // on browsers without visualViewport (which then still benefit
+  // from the interactive-widget=resizes-content meta tag above, and
+  // the dvh CSS fallback, on browsers that support those instead).
+  // ============================================================
+  (function setupAppHeight(){
+    function apply(){
+      var h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty("--app-height", h + "px");
+    }
+    apply();
+    if (window.visualViewport){
+      window.visualViewport.addEventListener("resize", apply);
+      window.visualViewport.addEventListener("scroll", apply);
+    } else {
+      window.addEventListener("resize", apply);
+      window.addEventListener("orientationchange", apply);
+    }
+  })();
 
   // ============================================================
   // FIREBASE SETUP — replace the placeholder values below with
