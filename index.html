@@ -37,7 +37,17 @@
   .topbar h1{
     font-size:1.4rem;
     margin:0;
+    display:flex;
+    align-items:center;
+    gap:10px;
   }
+  .sync-status{
+    font-size:0.75rem;
+    font-weight:600;
+    color:var(--muted);
+  }
+  .sync-status.online{color:var(--done);}
+  .sync-status.offline{color:var(--danger);}
   .layout{
     flex:1;
     display:flex;
@@ -377,7 +387,7 @@
 <div class="app">
 
   <div class="topbar">
-    <h1>Class Queue</h1>
+    <h1>Class Queue <span class="sync-status" id="syncStatus" title="Connecting...">○ Connecting…</span></h1>
   </div>
 
   <div class="layout">
@@ -434,15 +444,44 @@
   <button data-action="delete" class="danger">Delete</button>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 (function(){
   "use strict";
 
-  var QUEUES_KEY = "classQueue.queues";
-  var ACTIVE_KEY = "classQueue.activeQueueId";
+  // ============================================================
+  // FIREBASE SETUP — replace the placeholder values below with
+  // the config from your own Firebase project (Project settings
+  // -> General -> Your apps -> Web app -> SDK setup and
+  // configuration -> Config). See README.md for step-by-step
+  // instructions. This is what makes the queue sync live across
+  // every device that has this page open.
+  // ============================================================
+  var firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  var firebaseReady = firebaseConfig.apiKey !== "YOUR_API_KEY";
+  var db = null;
+  var stateRef = null;
+
+  if (firebaseReady){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    stateRef = db.ref("classQueueState");
+  }
+
   var HASH_KEY = "classQueue.teacherHash";
   var CLOCK_KEY = "classQueue.clockSize";
-  var LEGACY_STUDENTS_KEY = "classQueue.students";
+  var LEGACY_QUEUES_KEY = "classQueue.queues"; // from the pre-sync, local-only version
+  var LOCAL_STATE_KEY = "classQueue.localState"; // fallback used only if Firebase isn't configured yet
 
   function newId(){
     return Date.now() + "-" + Math.random().toString(36).slice(2, 8);
@@ -457,42 +496,52 @@
     return String(hash);
   }
 
-  // ---------- load state (with one-time migration from the old single-queue format) ----------
-  function loadQueues(){
-    try {
-      var raw = localStorage.getItem(QUEUES_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch(e){}
+  // ---------- live state, synced via Firebase Realtime Database ----------
+  var queues = [];
+  var activeQueueId = null;
+  var remoteLoaded = false; // true once we've received the first snapshot (or seeded one)
+  var teacherUnlocked = false;
 
-    // migrate legacy single-list data if present
+  function defaultQueues(){
+    // one-time migration from the old local-only format, if present
     try {
-      var legacy = localStorage.getItem(LEGACY_STUDENTS_KEY);
+      var legacy = localStorage.getItem(LEGACY_QUEUES_KEY);
       if (legacy){
-        var students = JSON.parse(legacy);
-        localStorage.removeItem(LEGACY_STUDENTS_KEY);
-        return [{ id: newId(), name: "Queue 1", students: students }];
+        var parsed = JSON.parse(legacy);
+        localStorage.removeItem(LEGACY_QUEUES_KEY);
+        if (parsed && parsed.length) return parsed;
       }
     } catch(e){}
-
     return [{ id: newId(), name: "Queue 1", students: [] }];
   }
 
-  var queues = loadQueues();
-  var activeQueueId = localStorage.getItem(ACTIVE_KEY) || queues[0].id;
-  if (!queues.find(function(q){ return q.id === activeQueueId; })) activeQueueId = queues[0].id;
-
-  var teacherUnlocked = false;
-
   function saveQueues(){
-    localStorage.setItem(QUEUES_KEY, JSON.stringify(queues));
-    localStorage.setItem(ACTIVE_KEY, activeQueueId);
+    if (!remoteLoaded) return;
+    if (firebaseReady){
+      stateRef.set({ queues: queues, activeQueueId: activeQueueId });
+    } else {
+      localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify({ queues: queues, activeQueueId: activeQueueId }));
+    }
   }
 
   function activeQueue(){
     return queues.find(function(q){ return q.id === activeQueueId; }) || queues[0];
   }
 
+  function applySnapshot(data){
+    if (data && data.queues && data.queues.length){
+      queues = data.queues;
+      activeQueueId = data.activeQueueId;
+    } else {
+      queues = defaultQueues();
+      activeQueueId = queues[0].id;
+    }
+    if (!queues.find(function(q){ return q.id === activeQueueId; })) activeQueueId = queues[0].id;
+    remoteLoaded = true;
+  }
+
   // ---------- DOM refs ----------
+  var syncStatusEl = document.getElementById("syncStatus");
   var tabStrip = document.getElementById("tabStrip");
   var queueList = document.getElementById("queueList");
   var queueEmptyMsg = document.getElementById("queueEmptyMsg");
@@ -574,8 +623,15 @@
   }
 
   function renderQueue(){
+    if (!remoteLoaded){
+      queueList.innerHTML = "";
+      queueEmptyMsg.textContent = "Connecting to the live queue…";
+      queueEmptyMsg.style.display = "block";
+      return;
+    }
     var students = activeQueue().students;
     queueList.innerHTML = "";
+    queueEmptyMsg.textContent = "No one in the queue yet.";
     queueEmptyMsg.style.display = students.length ? "none" : "block";
 
     var pos = 0;
@@ -1021,9 +1077,44 @@
   document.addEventListener("touchmove", function(e){ if (colDragging) moveColDrag(e.touches[0].clientX); }, { passive:true });
   document.addEventListener("touchend", endColDrag);
 
+  // ================= LIVE SYNC / CONNECTION STATUS =================
+  function updateSyncStatus(connected){
+    if (!firebaseReady){
+      syncStatusEl.textContent = "⚠ Sync not set up";
+      syncStatusEl.className = "sync-status offline";
+      syncStatusEl.title = "Add your Firebase config in index.html to enable live sync across devices — see README.md. Working in single-device mode for now.";
+      return;
+    }
+    if (connected){
+      syncStatusEl.textContent = "● Live";
+      syncStatusEl.className = "sync-status online";
+      syncStatusEl.title = "Connected — changes sync to every device instantly.";
+    } else {
+      syncStatusEl.textContent = "○ Reconnecting…";
+      syncStatusEl.className = "sync-status";
+      syncStatusEl.title = "Lost connection — this page will resync automatically.";
+    }
+  }
+
   // ================= INIT =================
-  saveQueues();
-  render();
+  if (firebaseReady){
+    stateRef.on("value", function(snapshot){
+      var data = snapshot.val();
+      var needsSeed = !data;
+      applySnapshot(data);
+      render();
+      if (needsSeed) saveQueues(); // first run: write the initial/migrated data to the database
+    });
+    db.ref(".info/connected").on("value", function(snap){
+      updateSyncStatus(snap.val() === true);
+    });
+  } else {
+    var localData = null;
+    try { localData = JSON.parse(localStorage.getItem(LOCAL_STATE_KEY) || "null"); } catch(e){}
+    applySnapshot(localData);
+    updateSyncStatus(false);
+    render();
+  }
 })();
 </script>
 </body>
